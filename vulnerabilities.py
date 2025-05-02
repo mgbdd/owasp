@@ -7,6 +7,7 @@ from flask import Flask, request, render_template
 import sqlite3
 
 app = Flask(__name__)
+app.config['WTF_CSRF_ENABLED'] = False
 
 def init_db():
     conn = sqlite3.connect('users.db')
