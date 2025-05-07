@@ -27,6 +27,12 @@ def register():
 
         conn = sqlite3.connect('users.db')
         cursor = conn.cursor()
+
+        cursor.execute(f"SELECT username FROM users WHERE username = '{username}'")
+        if cursor.fetchone():
+            return "Username already taken. Please choose another username."  # Раскрытие информации о существующих пользователях
+
+        
         cursor.execute(f"INSERT INTO users (username, password, role) VALUES ('{username}', '{password}', '{role}')")    #  A03:2021-Injection
         #cursor.execute("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", (username, password, role))
 
