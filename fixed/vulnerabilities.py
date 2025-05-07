@@ -3,6 +3,11 @@ from flask_wtf.csrf import CSRFProtect
 import sqlite3
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+
+limiter = Limiter(app, key_func=get_remote_address)
+
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)  # Генерация безопасного секретного ключа
@@ -75,6 +80,7 @@ def register():
     return render_template('register.html')
 
 @app.route('/login', methods=['GET', 'POST'])
+@limiter.limit("5/minute") 
 def login():
     if request.method == 'POST':
         username = request.form.get('username')
