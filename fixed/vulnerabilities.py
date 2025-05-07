@@ -1,79 +1,122 @@
-# уязвимости: 
-#       A03:2021-Injection                                                       SQL-инъекции                   Утечка данных       Удаление или изменение данных. 
-#       A01:2021 - Broken Access Control                                  Уязвимость возникает, когда приложение не проверяет права доступа пользователя перед выполнением действий
-#       A07:2021 - Identification and Authentication Failures              Уязвимости, связанные с неправильной реализацией аутентификации и идентификации пользователей. Это включает слабые пароли, отсутствие блокировки учетных записей после множества неудачных попыток и хранение паролей в открытом виде.
-#       A05:2021 - Security Misconfiguration                                Уязвимость возникает, когда приложение, сервер или база данных настроены неправильно. Это может быть связано с использованием стандартных учетных данных, включением ненужных функций или отсутствием обновлений.
-from flask import Flask, request, render_template, session, redirect, url_for 
+from flask import Flask, request, render_template, redirect, session
+from flask_wtf.csrf import CSRFProtect
 import sqlite3
+from werkzeug.security import generate_password_hash, check_password_hash
+import os
 
 app = Flask(__name__)
-app.secret_key = 'ultra_secret_key'
+app.secret_key = os.urandom(24)  # Генерация безопасного секретного ключа
+app.config['WTF_CSRF_ENABLED'] = True  # Включаем CSRF защиту
+csrf = CSRFProtect(app)  # A05: Исправлено
+
+# Настройки сессии
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=15)
+app.config['SESSION_COOKIE_SECURE'] = True
+app.config['SESSION_COOKIE_HTTPONLY'] = True
 
 def init_db():
     conn = sqlite3.connect('users.db')
     cursor = conn.cursor()
-    cursor.execute('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT, password TEXT, role TEXT)')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY,
+            username TEXT UNIQUE,
+            password TEXT,
+            role TEXT
+        )
+    ''')
     conn.commit()
     conn.close()
 
 init_db()
 
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-
-        conn =sqlite3.connect('users.db')
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
-        user = cursor.fetchone()
-        conn.close()
-
-        if user and user[2] == password:
-            session['username'] = user[1]
-            session['role'] = user[3]
-            return redirect(url_for('home'))
-        return 'Invalid credentials'
-    return render_template('login.html')
-
-@app.route('/logout')
-def logout():
-    session.pop('username', None)
-    session.pop('role', None)
-    return redirect(url_for('home'))
-
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-        role = 'user'  
+        username = request.form.get('username')
+        password = request.form.get('password')
+        role = 'user'
+
+        # Валидация ввода
+        if not username or not password:
+            return "Please fill all fields", 400
+        
+        # Проверка сложности пароля
+        if len(password) < 8:
+            return "Password must be at least 8 characters", 400
 
         conn = sqlite3.connect('users.db')
         cursor = conn.cursor()
-        cursor.execute("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", (username, password, role))
-        # параметризованные запросы автоматически экранируют пользовательский ввод, предотвращая SQL-инъекции
-        # Даже если ввести вредоносные данные, они будут обработаны как обычные строки, а не как часть SQL-запроса
 
-        conn.commit()
-        conn.close()
-        
-        return render_template('back.html')
+        try:
+            # Безопасная проверка существующего пользователя
+            cursor.execute("SELECT username FROM users WHERE username = ?", (username,))
+            if cursor.fetchone():
+                # A04: Исправлено - унифицированное сообщение
+                return "Registration failed. Please try again with different credentials.", 400
+            
+            # Хеширование пароля (A07: Исправлено)
+            hashed_password = generate_password_hash(password)
+            
+            # Параметризованный запрос (A03: Исправлено)
+            cursor.execute(
+                "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
+                (username, hashed_password, role)
+            )
+            conn.commit()
+            
+        except sqlite3.Error as e:
+            return f"Database error: {str(e)}", 500
+        finally:
+            conn.close()
+
+        return redirect('/login')
+    
     return render_template('register.html')
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        
+        conn = sqlite3.connect('users.db')
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT password, role FROM users WHERE username = ?", 
+            (username,)
+        )
+        user = cursor.fetchone()
+        conn.close()
+
+        if user and check_password_hash(user[0], password):
+            # Создаем сессию (A01: Исправлено)
+            session.permanent = True
+            session['username'] = username
+            session['role'] = user[1]
+            return redirect('/')
+        
+        return "Invalid credentials", 401
+    
+    return render_template('login.html')
 
 @app.route('/admin')
 def admin():
-    if 'username' not in session:
-        return redirect(url_for('login'))
+    # Проверка аутентификации и прав через сессию (A01: Исправлено)
+    if 'role' not in session or session.get('role') != 'admin':
+        return 'Access Denied', 403
+    return 'Welcome, Admin!'
 
-    if session.get('role') == 'admin':  # Проверка роли через сессию
-        return 'Welcome, Admin!'
-    return 'Access Denied'
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect('/')
 
 @app.route('/')
 def home():
-    return render_template('index.html')  
+    if 'username' in session:
+        return f'Welcome {session["username"]}!'
+    return render_template('index.html')
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=False)  # A05: Исправлено (debug отключен)
