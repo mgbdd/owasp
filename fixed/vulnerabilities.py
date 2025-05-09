@@ -142,6 +142,7 @@ def login():
             cursor.execute(
                 "UPDATE users SET login_attempts = 0 WHERE id = ?",
                 (user[0],)
+            )
             conn.commit()
             
             # Создание сессии
@@ -155,13 +156,15 @@ def login():
             cursor.execute(
                 "UPDATE users SET login_attempts = login_attempts + 1 WHERE id = ?",
                 (user[0],)
+            )
             conn.commit()
             return jsonify({"error": "Invalid credentials"}), 401
             
-    except sqlite3.Error:
+    except sqlite3.Error as e:
         return jsonify({"error": "Database error"}), 500
     finally:
-        conn.close()
+        if 'conn' in locals():
+            conn.close()
 
 # ===== ЗАПУСК =====
 if __name__ == '__main__':
