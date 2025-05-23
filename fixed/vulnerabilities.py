@@ -9,6 +9,9 @@ import re
 import secrets
 from datetime import timedelta
 
+# Константы приложения
+DATABASE_NAME = 'users.db'
+
 # Создаем приложение Flask
 app = Flask(__name__)
 
@@ -75,7 +78,7 @@ def login_without_csrf():
     
     # Подключение к БД и проверка
     try:
-        conn = sqlite3.connect('users.db')
+        conn = sqlite3.connect(DATABASE_NAME)
         cursor = conn.cursor()
         
         # Получаем информацию о структуре таблицы
@@ -132,7 +135,7 @@ def api_register():
         return jsonify({"error": "Password too weak"}), 400
     
     try:
-        conn = sqlite3.connect('users.db')
+        conn = sqlite3.connect(DATABASE_NAME)
         cursor = conn.cursor()
         
         cursor.execute("SELECT username FROM users WHERE username = ?", (username,))
@@ -166,7 +169,7 @@ def api_login():
     password = data.get('password')
     
     try:
-        conn = sqlite3.connect('users.db')
+        conn = sqlite3.connect(DATABASE_NAME)
         cursor = conn.cursor()
         
         cursor.execute(
@@ -203,7 +206,7 @@ def api_login():
 def init_db():
     """Инициализация базы данных с проверкой структуры"""
     try:
-        conn = sqlite3.connect('users.db')
+        conn = sqlite3.connect(DATABASE_NAME)
         cursor = conn.cursor()
         
         # Создаем таблицу, если она не существует
@@ -268,7 +271,7 @@ def register():
 
     # Безопасное подключение к БД
     try:
-        conn = sqlite3.connect('users.db')
+        conn = sqlite3.connect(DATABASE_NAME)
         cursor = conn.cursor()
         
         # Проверка существующего пользователя
@@ -320,7 +323,7 @@ def login():
         return render_template('login.html', error="Заполните все поля"), 400
 
     try:
-        conn = sqlite3.connect('users.db')
+        conn = sqlite3.connect(DATABASE_NAME)
         cursor = conn.cursor()
         
         # Получаем данные пользователя
@@ -437,7 +440,7 @@ def admin():
     
     # Получаем данные пользователей (только для администраторов)
     try:
-        conn = sqlite3.connect('users.db')
+        conn = sqlite3.connect(DATABASE_NAME)
         cursor = conn.cursor()
         cursor.execute("SELECT id, username, role FROM users")
         users = cursor.fetchall()
@@ -453,7 +456,7 @@ def admin():
 def debug_db():
     """Отладочный маршрут для проверки структуры базы данных"""
     try:
-        conn = sqlite3.connect('users.db')
+        conn = sqlite3.connect(DATABASE_NAME)
         cursor = conn.cursor()
         
         # Получаем схему таблицы пользователей
