@@ -6,13 +6,20 @@ from flask_limiter.util import get_remote_address
 import sqlite3
 import os
 import re
+import secrets
 from datetime import timedelta
 
 # Создаем приложение Flask
 app = Flask(__name__)
 
-# Используем фиксированный ключ для тестирования
-app.secret_key = "development_secret_key_do_not_use_in_production"
+# Генерируем случайные секретные ключи при запуске приложения
+def generate_secret_key():
+    """Генерирует криптографически стойкий случайный ключ"""
+    return secrets.token_hex(32)  # 32 байта = 256 бит
+
+# Устанавливаем случайные ключи или используем переменные окружения
+app.secret_key = os.environ.get('FLASK_SECRET_KEY', generate_secret_key())
+csrf_key = os.environ.get('FLASK_CSRF_KEY', generate_secret_key())
 
 # ===== КОНФИГУРАЦИЯ БЕЗОПАСНОСТИ =====
 app.config.update(
@@ -21,9 +28,9 @@ app.config.update(
     SESSION_COOKIE_HTTPONLY=True,   # Защита от XSS
     SESSION_COOKIE_SAMESITE='Lax',  # Защита от CSRF
     
-    # Временно отключаем CSRF для отладки
+    # Настройки CSRF
     WTF_CSRF_ENABLED=False,         # Отключаем CSRF для тестирования
-    WTF_CSRF_SECRET_KEY="development_csrf_key_do_not_use_in_production",
+    WTF_CSRF_SECRET_KEY=csrf_key,
     WTF_CSRF_TIME_LIMIT=3600        # Увеличиваем время жизни токена
 )
 
@@ -49,18 +56,10 @@ def handle_csrf_error(e):
 # Маршрут для выхода из системы
 @app.route('/logout')
 def logout():
-    """Выход из системы и очистка сессии"""
-    # Запоминаем имя пользователя перед очисткой сессии
-    username = session.get('username', 'Пользователь')
-    
-    # Очищаем все данные сессии
     session.clear()
-    
-    # Отображаем страницу успешного выхода из системы
-    message = f'Bye-bye, {username}!'
+    message = f'Bye-bye!'
     return render_template('logout_success.html', message=message)
 
-# Разрешаем доступ без CSRF-токена в определенных случаях
 @csrf.exempt
 @app.route('/login_without_csrf', methods=['POST'])
 def login_without_csrf():
@@ -520,9 +519,27 @@ def debug_db():
     except sqlite3.Error as e:
         return f"Ошибка базы данных: {str(e)}"
 
+# Функция для проверки безопасности ключей перед запуском
+def check_key_security():
+    """Проверяет, не используются ли небезопасные ключи"""
+    debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
+    
+    # В режиме отладки просто логируем информацию
+    if debug_mode:
+        app.logger.info("Используются случайно сгенерированные ключи для этого сеанса")
+        
+    # Проверяем, не используются ли тестовые ключи в продакшене
+    production_mode = os.getenv('FLASK_ENV') == 'production'
+    if production_mode and (
+        'FLASK_SECRET_KEY' not in os.environ or 
+        'FLASK_CSRF_KEY' not in os.environ
+    ):
+        app.logger.warning("ВНИМАНИЕ: В продакшен-режиме следует указать секретные ключи через переменные окружения")
+
 # ===== ЗАПУСК =====
 if __name__ == '__main__':
     init_db()
+    check_key_security()
     app.run(
         host='0.0.0.0',
         port=5000,
