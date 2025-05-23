@@ -56,9 +56,12 @@ def handle_csrf_error(e):
 # Маршрут для выхода из системы
 @app.route('/logout')
 def logout():
+    """Выход из системы и очистка сессии"""
+    # Очищаем все данные сессии
     session.clear()
-    message = f'Bye-bye!'
-    return render_template('logout_success.html', message=message)
+    
+    # Отображаем страницу успешного выхода из системы
+    return render_template('logout_success.html', message='Вы успешно вышли из системы')
 
 @csrf.exempt
 @app.route('/login_without_csrf', methods=['POST'])
@@ -261,17 +264,7 @@ def register():
         return render_template('register.html', error="Заполните все поля"), 400
     
     if not is_strong_password(password):
-        return render_template('register.html', error="Пароль слишком слабый. Должен содержать не менее 8 символов, включая заглавную букву, цифру и специальный символ."), 400
-
-    # Валидация
-    if not username or not password:
-        return jsonify({"error": "All fields required"}), 400
-    
-    if not is_strong_password(password):
-        if request.form:
-            return render_template('register.html', error="Пароль слишком слабый. Пароль должен содержать минимум 8 символов, включая заглавную букву, цифру и специальный символ (!@#$%^&*)")
-        else:
-            return jsonify({"error": "Password too weak"}), 400
+        return render_template('register.html', error="Пароль слишком слабый. Должен содержать не менее 8 символов, включая заглавную букву, цифру и специальный символ (!@#$%^&*)"), 400
 
     # Безопасное подключение к БД
     try:
@@ -362,6 +355,7 @@ def login():
             # Создание сессии
             session.permanent = True
             session['user_id'] = user[0]
+            session['username'] = username
             session['role'] = user[2]
             
             # Возврат ответа в зависимости от типа запроса
@@ -454,13 +448,6 @@ def admin():
     
     # Отображаем административную панель
     return render_template('admin.html', users=users)
-    
-    # Получаем данные пользователя
-    username = session.get('username')
-    role = session.get('role', 'user')
-    
-    # Отображаем страницу профиля с данными пользователя
-    return render_template('profile.html', username=username, role=role)
 
 @app.route('/debug_db')
 def debug_db():
