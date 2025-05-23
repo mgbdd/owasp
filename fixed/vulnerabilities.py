@@ -9,7 +9,6 @@ import re
 import secrets
 from datetime import timedelta
 
-# Константы приложения
 DATABASE_NAME = 'users.db'
 SQL_GET_TABLE_INFO = "PRAGMA table_info(users)"
 ERR_DATABASE = "Database error"
@@ -17,29 +16,29 @@ ERR_INVALID_CREDENTIALS = "Invalid credentials"
 TEMPLATE_LOGIN = 'login.html'
 TEMPLATE_REGISTER = 'register.html'
 
-# Создаем приложение Flask
 app = Flask(__name__)
 
-# Генерируем случайные секретные ключи при запуске приложения
+
+# случайные секретные ключи при запуске приложения
 def generate_secret_key():
     """Генерирует криптографически стойкий случайный ключ"""
     return secrets.token_hex(32)  # 32 байта = 256 бит
 
-# Устанавливаем случайные ключи или используем переменные окружения
+
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', generate_secret_key())
 csrf_key = os.environ.get('FLASK_CSRF_KEY', generate_secret_key())
 
-# ===== КОНФИГУРАЦИЯ БЕЗОПАСНОСТИ =====
+# конфигурация безопасности
 app.config.update(
     PERMANENT_SESSION_LIFETIME=timedelta(minutes=15),
-    SESSION_COOKIE_SECURE=False,    # Отключаем HTTPS для локальной разработки
-    SESSION_COOKIE_HTTPONLY=True,   # Защита от XSS
+    SESSION_COOKIE_SECURE=False,  # Отключаем HTTPS для локальной разработки
+    SESSION_COOKIE_HTTPONLY=True,  # Защита от XSS
     SESSION_COOKIE_SAMESITE='Lax',  # Защита от CSRF
-    
+
     # Настройки CSRF
-    WTF_CSRF_ENABLED=False,         # Отключаем CSRF для тестирования
+    WTF_CSRF_ENABLED=False,  # Отключаем CSRF для тестирования
     WTF_CSRF_SECRET_KEY=csrf_key,
-    WTF_CSRF_TIME_LIMIT=3600        # Увеличиваем время жизни токена
+    WTF_CSRF_TIME_LIMIT=3600  # Увеличиваем время жизни токена
 )
 
 # Инициализация CSRF защиты
@@ -52,24 +51,22 @@ limiter = Limiter(
     default_limits=["200 per day", "50 per hour"]
 )
 
+
 # Обработка ошибок CSRF
 @app.errorhandler(CSRFError)
 def handle_csrf_error(e):
-    # Для отладки выводим дополнительную информацию
     app.logger.error("CSRF error: " + str(e))
-    return render_template('error.html', 
-                          error="CSRF ошибка: Действие не выполнено из соображений безопасности. Пожалуйста, попробуйте снова.",
-                          details=str(e)), 400
+    return render_template('error.html',
+                           error="CSRF ошибка: Действие не выполнено из соображений безопасности. Пожалуйста, попробуйте снова.",
+                           details=str(e)), 400
 
-# Маршрут для выхода из системы
+
 @app.route('/logout')
 def logout():
     """Выход из системы и очистка сессии"""
-    # Очищаем все данные сессии
     session.clear()
-    
-    # Отображаем страницу успешного выхода из системы
     return render_template('logout_success.html', message='Вы успешно вышли из системы')
+
 
 @csrf.exempt
 @app.route('/login_without_csrf', methods=['POST'])
@@ -77,48 +74,45 @@ def login_without_csrf():
     """Вход без CSRF (только для отладки)"""
     username = request.form.get('username')
     password = request.form.get('password')
-    
+
     if not username or not password:
         return "Все поля обязательны", 400
-    
-    # Подключение к БД и проверка
+
     try:
         conn = sqlite3.connect(DATABASE_NAME)
         cursor = conn.cursor()
-        
-        # Получаем информацию о структуре таблицы
+
         cursor.execute(SQL_GET_TABLE_INFO)
         columns = [column[1] for column in cursor.fetchall()]
-        
-        # Адаптируем запрос к структуре таблицы
+
         if 'id' in columns:
             id_field = 'id'
         else:
             id_field = 'rowid'
-            
+
         cursor.execute(
             f"SELECT {id_field}, password, role FROM users WHERE username = ?",
             (username,)
         )
         user = cursor.fetchone()
-        
+
         if user and check_password_hash(user[1], password):
-            # Создание сессии
             session.permanent = True
             session['user_id'] = user[0]
             session['username'] = username
             session['role'] = user[2] if len(user) > 2 else 'user'
-            
+
             return redirect('/')
         else:
             return "Неверные учетные данные", 401
-            
+
     except sqlite3.Error as e:
         app.logger.error("Database error during login_without_csrf: " + str(e))
         return "Ошибка базы данных: " + str(e), 500
     finally:
         if 'conn' in locals():
             conn.close()
+
 
 # Исключение CSRF-проверки для API-маршрутов, если передается заголовок X-API-KEY
 @csrf.exempt
@@ -127,40 +121,40 @@ def api_register():
     """API для регистрации (без CSRF)"""
     if not request.is_json:
         return jsonify({"error": "JSON required"}), 400
-    
+
     data = request.get_json()
     username = data.get('username')
     password = data.get('password')
-    
-    # Валидация
+
     if not username or not password:
         return jsonify({"error": "All fields required"}), 400
-    
+
     if not is_strong_password(password):
         return jsonify({"error": "Password too weak"}), 400
-    
+
     try:
         conn = sqlite3.connect(DATABASE_NAME)
         cursor = conn.cursor()
-        
+
         cursor.execute("SELECT username FROM users WHERE username = ?", (username,))
         if cursor.fetchone():
             return jsonify({"error": "Username is taken"}), 409
-        
+
         hashed_pw = generate_password_hash(password, method='pbkdf2:sha256', salt_length=16)
-        
+
         cursor.execute(
             "INSERT INTO users (username, password) VALUES (?, ?)",
             (username, hashed_pw)
         )
         conn.commit()
-        
+
         return jsonify({"status": "User created"}), 201
-        
+
     except sqlite3.Error:
         return jsonify({"error": ERR_DATABASE}), 500
     finally:
         conn.close()
+
 
 @csrf.exempt
 @app.route('/api/login', methods=['POST'])
@@ -168,78 +162,97 @@ def api_login():
     """API для аутентификации (без CSRF)"""
     if not request.is_json:
         return jsonify({"error": "JSON required"}), 400
-    
+
     data = request.get_json()
     username = data.get('username')
     password = data.get('password')
-    
+
     try:
         conn = sqlite3.connect(DATABASE_NAME)
         cursor = conn.cursor()
-        
+
         cursor.execute(
             "SELECT id, password, role, login_attempts FROM users WHERE username = ?",
             (username,)
         )
         user = cursor.fetchone()
-        
+
         if not user:
             return jsonify({"error": ERR_INVALID_CREDENTIALS}), 401
-            
+
         if user[3] >= 5:
             return jsonify({"error": "Account locked"}), 403
-            
+
         if check_password_hash(user[1], password):
             cursor.execute("UPDATE users SET login_attempts = 0 WHERE id = ?", (user[0],))
             conn.commit()
-            
+
             session.permanent = True
             session['user_id'] = user[0]
             session['role'] = user[2]
-            
+
             return jsonify({"status": "Authenticated"}), 200
         else:
             cursor.execute("UPDATE users SET login_attempts = login_attempts + 1 WHERE id = ?", (user[0],))
             conn.commit()
             return jsonify({"error": ERR_INVALID_CREDENTIALS}), 401
-            
+
     except sqlite3.Error:
         return jsonify({"error": ERR_DATABASE}), 500
     finally:
         conn.close()
+
 
 def init_db():
     """Инициализация базы данных с проверкой структуры"""
     try:
         conn = sqlite3.connect(DATABASE_NAME)
         cursor = conn.cursor()
-        
-        # Создаем таблицу, если она не существует
+
         cursor.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE NOT NULL,
-                password TEXT NOT NULL,
-                role TEXT NOT NULL DEFAULT 'user',
-                login_attempts INTEGER DEFAULT 0,
-                last_attempt TIMESTAMP
-            )
-        ''')
-        
-        # Проверяем структуру таблицы
+                       CREATE TABLE IF NOT EXISTS users
+                       (
+                           id
+                           INTEGER
+                           PRIMARY
+                           KEY
+                           AUTOINCREMENT,
+                           username
+                           TEXT
+                           UNIQUE
+                           NOT
+                           NULL,
+                           password
+                           TEXT
+                           NOT
+                           NULL,
+                           role
+                           TEXT
+                           NOT
+                           NULL
+                           DEFAULT
+                           'user',
+                           login_attempts
+                           INTEGER
+                           DEFAULT
+                           0,
+                           last_attempt
+                           TIMESTAMP
+                       )
+                       ''')
+
         cursor.execute(SQL_GET_TABLE_INFO)
         columns = [column[1] for column in cursor.fetchall()]
-        
-        # Добавляем недостающие столбцы, если таблица уже существует
+
         if 'role' not in columns:
             cursor.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'")
-            
+
         if 'login_attempts' not in columns:
             cursor.execute("ALTER TABLE users ADD COLUMN login_attempts INTEGER DEFAULT 0")
-            
+
         if 'last_attempt' not in columns:
             cursor.execute("ALTER TABLE users ADD COLUMN last_attempt TIMESTAMP")
-        
+
         conn.commit()
         app.logger.info("Инициализация базы данных завершена успешно")
     except sqlite3.Error as e:
@@ -248,6 +261,7 @@ def init_db():
         if 'conn' in locals():
             conn.close()
 
+
 def is_strong_password(password):
     """Проверка сложности пароля"""
     return (len(password) >= 8 and
@@ -255,76 +269,73 @@ def is_strong_password(password):
             re.search(r"\d", password) and
             re.search(r"[!@#$%^&*]", password))
 
-# ===== РОУТИНГ =====
+
 @app.route('/register', methods=['GET', 'POST'])
-@limiter.limit("10/hour")  # Лимит регистраций
+@limiter.limit("10/hour")
 def register():
     """Обработка регистрации через форму (с CSRF)"""
     if request.method == 'GET':
         return render_template(TEMPLATE_REGISTER)
-    
-    # POST-запрос с формой
+
     username = request.form.get('username')
     password = request.form.get('password')
-        
-    # Валидация
+
     if not username or not password:
         return render_template(TEMPLATE_REGISTER, error="Заполните все поля"), 400
-    
-    if not is_strong_password(password):
-        return render_template(TEMPLATE_REGISTER, error="Пароль слишком слабый. Должен содержать не менее 8 символов, включая заглавную букву, цифру и специальный символ (!@#$%^&*)"), 400
 
-    # Безопасное подключение к БД
+    if not is_strong_password(password):
+        return render_template(TEMPLATE_REGISTER,
+                               error="Пароль слишком слабый. Должен содержать не менее 8 символов, включая заглавную букву, цифру и специальный символ (!@#$%^&*)"), 400
+
     try:
         conn = sqlite3.connect(DATABASE_NAME)
         cursor = conn.cursor()
-        
-        # Проверка существующего пользователя
+
         cursor.execute(
-            "SELECT username FROM users WHERE username = ?", 
+            "SELECT username FROM users WHERE username = ?",
             (username,)
         )
         if cursor.fetchone():
             return jsonify({"error": "Username is taken or invalid"}), 409
-        
+
         # Хеширование пароля
         hashed_pw = generate_password_hash(
             password,
             method='pbkdf2:sha256',
             salt_length=16
         )
-        
-        # Безопасная вставка
+
         cursor.execute(
             "INSERT INTO users (username, password) VALUES (?, ?)",
             (username, hashed_pw)
         )
         conn.commit()
-        
-        # Возврат ответа в зависимости от типа запроса
+
         if request.form:
             return redirect('/login')
         else:
             return jsonify({"status": "User created"}), 201
-        
+
     except sqlite3.Error:
         return jsonify({"error": ERR_DATABASE}), 500
     finally:
         conn.close()
 
-# Вспомогательные функции для обработки входа
+
 def handle_no_user(is_form_request):
     """Обрабатывает случай, когда пользователь не найден"""
     if is_form_request:
         return render_template(TEMPLATE_LOGIN, error="Неверные учетные данные")
     return jsonify({"error": ERR_INVALID_CREDENTIALS}), 401
 
+
 def handle_account_locked(is_form_request):
     """Обрабатывает случай блокировки аккаунта"""
     if is_form_request:
-        return render_template(TEMPLATE_LOGIN, 
-                             error="Учетная запись заблокирована из-за слишком большого количества неудачных попыток входа")
+        return render_template(TEMPLATE_LOGIN,
+                               error="Учетная запись заблокирована из-за слишком большого количества неудачных попыток входа")
     return jsonify({"error": "Account locked"}), 403
+
 
 def create_user_session(user_id, username, role):
     """Создает сессию для аутентифицированного пользователя"""
@@ -333,77 +344,68 @@ def create_user_session(user_id, username, role):
     session['username'] = username
     session['role'] = role
 
+
 @app.route('/login', methods=['GET', 'POST'])
-@limiter.limit("5/minute")  # Лимит попыток входа
+@limiter.limit("5/minute")
 def login():
     """Аутентификация через форму (с CSRF)"""
     if request.method == 'GET':
         return render_template(TEMPLATE_LOGIN)
-    
-    # POST-запрос с формой
+
     username = request.form.get('username')
     password = request.form.get('password')
     is_form_request = bool(request.form)
-    
-    # Валидация
+
     if not username or not password:
         return render_template(TEMPLATE_LOGIN, error="Заполните все поля"), 400
 
     try:
         conn = sqlite3.connect(DATABASE_NAME)
         cursor = conn.cursor()
-        
-        # Получаем данные пользователя
+
         cursor.execute(
             "SELECT id, password, role, login_attempts FROM users WHERE username = ?",
             (username,)
         )
         user = cursor.fetchone()
-        
-        # Проверяем существование пользователя
+
         if not user:
             return handle_no_user(is_form_request)
-            
-        # Проверка блокировки аккаунта
+
         if user[3] >= 5:
             return handle_account_locked(is_form_request)
-            
-        # Проверка пароля
+
         if check_password_hash(user[1], password):
-            # Сброс счетчика попыток
             cursor.execute("UPDATE users SET login_attempts = 0 WHERE id = ?", (user[0],))
             conn.commit()
-            
-            # Создание сессии
+
             create_user_session(user[0], username, user[2])
-            
-            # Возврат ответа
+
             if is_form_request:
                 return redirect('/')
             return jsonify({"status": "Authenticated"}), 200
         else:
-            # Увеличиваем счетчик попыток
             cursor.execute("UPDATE users SET login_attempts = login_attempts + 1 WHERE id = ?", (user[0],))
             conn.commit()
             return jsonify({"error": ERR_INVALID_CREDENTIALS}), 401
-            
+
     except sqlite3.Error as e:
         return jsonify({"error": ERR_DATABASE}), 500
     finally:
         if 'conn' in locals():
             conn.close()
 
+
 @app.route('/')
 def home():
     """Главная страница"""
     if 'username' in session:
-        # Если пользователь вошел, показываем персонализированное содержимое
-        return render_template('dashboard.html', 
-                             username=session.get('username', 'Пользователь'), 
-                             role=session.get('role', 'user'))
+        return render_template('dashboard.html',
+                               username=session.get('username', 'Пользователь'),
+                               role=session.get('role', 'user'))
     else:
-        # Если пользователь не вошел, показываем стандартную страницу
         return render_template('index.html')
+
 
 @app.route('/debug_csrf')
 def debug_csrf():
@@ -426,21 +428,17 @@ def debug_csrf():
     </html>
     """
 
-# Маршрут для профиля пользователя
+
 @app.route('/profile')
 def profile():
     """Страница профиля пользователя"""
-    # Проверяем, вошел ли пользователь
     if 'username' not in session:
-        # Если пользователь не вошел, перенаправляем на страницу входа
         return redirect('/login')
-    
-    # Получаем данные пользователя
     username = session.get('username')
     role = session.get('role', 'user')
-    
-    # Отображаем страницу профиля с данными пользователя
+
     return render_template('profile.html', username=username, role=role)
+
 
 @app.route('/admin')
 def admin():
@@ -449,7 +447,7 @@ def admin():
     if 'role' not in session or session.get('role') != 'admin':
         # Если пользователь не админ, отправляем ошибку доступа
         return render_template('error.html', error="У вас нет прав для доступа к этой странице"), 403
-    
+
     # Получаем данные пользователей (только для администраторов)
     try:
         conn = sqlite3.connect(DATABASE_NAME)
@@ -460,9 +458,9 @@ def admin():
     except sqlite3.Error as e:
         users = []
         app.logger.error("Ошибка при получении списка пользователей: " + str(e))
-    
-    # Отображаем административную панель
+
     return render_template('admin.html', users=users)
+
 
 @app.route('/debug_db')
 def debug_db():
@@ -470,31 +468,34 @@ def debug_db():
     try:
         conn = sqlite3.connect(DATABASE_NAME)
         cursor = conn.cursor()
-        
+
         # Получаем схему таблицы пользователей
         cursor.execute(SQL_GET_TABLE_INFO)
         columns = cursor.fetchall()
-        
+
         # Получаем первых 5 пользователей
         cursor.execute("SELECT * FROM users LIMIT 5")
         users = cursor.fetchall()
-        
+
         result = "<h1>Отладка базы данных</h1>"
-        
-        # Вывод структуры таблицы
+
         result += "<h2>Структура таблицы users:</h2><table border='1'><tr><th>ID</th><th>Название</th><th>Тип</th><th>Not Null</th><th>Default</th><th>PK</th></tr>"
         for col in columns:
-            result += "<tr><td>{0}</td><td>{1}</td><td>{2}</td><td>{3}</td><td>{4}</td><td>{5}</td></tr>".format(col[0], col[1], col[2], col[3], col[4], col[5])
+            result += "<tr><td>{0}</td><td>{1}</td><td>{2}</td><td>{3}</td><td>{4}</td><td>{5}</td></tr>".format(col[0],
+                                                                                                                 col[1],
+                                                                                                                 col[2],
+                                                                                                                 col[3],
+                                                                                                                 col[4],
+                                                                                                                 col[5])
         result += "</table>"
-        
-        # Вывод пользователей
+
         result += "<h2>Пользователи в базе:</h2>"
         if users:
             result += "<table border='1'><tr>"
             for i in range(len(columns)):
                 result += "<th>{0}</th>".format(columns[i][1])
             result += "</tr>"
-            
+
             for user in users:
                 result += "<tr>"
                 for value in user:
@@ -503,10 +504,9 @@ def debug_db():
             result += "</table>"
         else:
             result += "<p>Нет пользователей в базе данных</p>"
-            
+
         conn.close()
-        
-        # Добавление формы для регистрации тестового пользователя
+
         result += """
         <h2>Создать тестового пользователя:</h2>
         <form action='/register' method='POST'>
@@ -516,29 +516,29 @@ def debug_db():
             <button type='submit'>Создать пользователя</button>
         </form>
         """
-        
+
         return result
     except sqlite3.Error as e:
         return "Ошибка базы данных: " + str(e)
+
 
 # Функция для проверки безопасности ключей перед запуском
 def check_key_security():
     """Проверяет, не используются ли небезопасные ключи"""
     debug_mode = os.getenv('FLASK_DEBUG', 'false').lower() == 'true'
-    
-    # В режиме отладки просто логируем информацию
+
     if debug_mode:
         app.logger.info("Используются случайно сгенерированные ключи для этого сеанса")
-        
+
     # Проверяем, не используются ли тестовые ключи в продакшене
     production_mode = os.getenv('FLASK_ENV') == 'production'
     if production_mode and (
-        'FLASK_SECRET_KEY' not in os.environ or 
-        'FLASK_CSRF_KEY' not in os.environ
+            'FLASK_SECRET_KEY' not in os.environ or
+            'FLASK_CSRF_KEY' not in os.environ
     ):
         app.logger.warning("ВНИМАНИЕ: В продакшен-режиме следует указать секретные ключи через переменные окружения")
 
-# ===== ЗАПУСК =====
+
 if __name__ == '__main__':
     init_db()
     check_key_security()
