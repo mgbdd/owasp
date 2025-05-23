@@ -14,6 +14,8 @@ DATABASE_NAME = 'users.db'
 SQL_GET_TABLE_INFO = "PRAGMA table_info(users)"
 ERR_DATABASE = "Database error"
 ERR_INVALID_CREDENTIALS = "Invalid credentials"
+TEMPLATE_LOGIN = 'login.html'
+TEMPLATE_REGISTER = 'register.html'
 
 # Создаем приложение Flask
 app = Flask(__name__)
@@ -54,7 +56,7 @@ limiter = Limiter(
 @app.errorhandler(CSRFError)
 def handle_csrf_error(e):
     # Для отладки выводим дополнительную информацию
-    app.logger.error(f"CSRF error: {str(e)}")
+    app.logger.error("CSRF error: " + str(e))
     return render_template('error.html', 
                           error="CSRF ошибка: Действие не выполнено из соображений безопасности. Пожалуйста, попробуйте снова.",
                           details=str(e)), 400
@@ -112,8 +114,8 @@ def login_without_csrf():
             return "Неверные учетные данные", 401
             
     except sqlite3.Error as e:
-        app.logger.error(f"Database error during login_without_csrf: {str(e)}")
-        return f"Ошибка базы данных: {str(e)}", 500
+        app.logger.error("Database error during login_without_csrf: " + str(e))
+        return "Ошибка базы данных: " + str(e), 500
     finally:
         if 'conn' in locals():
             conn.close()
@@ -241,7 +243,7 @@ def init_db():
         conn.commit()
         app.logger.info("Инициализация базы данных завершена успешно")
     except sqlite3.Error as e:
-        app.logger.error(f"Ошибка при инициализации базы данных: {str(e)}")
+        app.logger.error("Ошибка при инициализации базы данных: " + str(e))
     finally:
         if 'conn' in locals():
             conn.close()
@@ -259,7 +261,7 @@ def is_strong_password(password):
 def register():
     """Обработка регистрации через форму (с CSRF)"""
     if request.method == 'GET':
-        return render_template('register.html')
+        return render_template(TEMPLATE_REGISTER)
     
     # POST-запрос с формой
     username = request.form.get('username')
@@ -267,10 +269,10 @@ def register():
         
     # Валидация
     if not username or not password:
-        return render_template('register.html', error="Заполните все поля"), 400
+        return render_template(TEMPLATE_REGISTER, error="Заполните все поля"), 400
     
     if not is_strong_password(password):
-        return render_template('register.html', error="Пароль слишком слабый. Должен содержать не менее 8 символов, включая заглавную букву, цифру и специальный символ (!@#$%^&*)"), 400
+        return render_template(TEMPLATE_REGISTER, error="Пароль слишком слабый. Должен содержать не менее 8 символов, включая заглавную букву, цифру и специальный символ (!@#$%^&*)"), 400
 
     # Безопасное подключение к БД
     try:
@@ -305,25 +307,47 @@ def register():
         else:
             return jsonify({"status": "User created"}), 201
         
-    except sqlite3.Error as e:
+    except sqlite3.Error:
         return jsonify({"error": ERR_DATABASE}), 500
     finally:
         conn.close()
+
+# Вспомогательные функции для обработки входа
+def handle_no_user(is_form_request):
+    """Обрабатывает случай, когда пользователь не найден"""
+    if is_form_request:
+        return render_template(TEMPLATE_LOGIN, error="Неверные учетные данные")
+    return jsonify({"error": ERR_INVALID_CREDENTIALS}), 401
+
+def handle_account_locked(is_form_request):
+    """Обрабатывает случай блокировки аккаунта"""
+    if is_form_request:
+        return render_template(TEMPLATE_LOGIN, 
+                             error="Учетная запись заблокирована из-за слишком большого количества неудачных попыток входа")
+    return jsonify({"error": "Account locked"}), 403
+
+def create_user_session(user_id, username, role):
+    """Создает сессию для аутентифицированного пользователя"""
+    session.permanent = True
+    session['user_id'] = user_id
+    session['username'] = username
+    session['role'] = role
 
 @app.route('/login', methods=['GET', 'POST'])
 @limiter.limit("5/minute")  # Лимит попыток входа
 def login():
     """Аутентификация через форму (с CSRF)"""
     if request.method == 'GET':
-        return render_template('login.html')
+        return render_template(TEMPLATE_LOGIN)
     
     # POST-запрос с формой
     username = request.form.get('username')
     password = request.form.get('password')
+    is_form_request = bool(request.form)
     
     # Валидация
     if not username or not password:
-        return render_template('login.html', error="Заполните все поля"), 400
+        return render_template(TEMPLATE_LOGIN, error="Заполните все поля"), 400
 
     try:
         conn = sqlite3.connect(DATABASE_NAME)
@@ -336,45 +360,30 @@ def login():
         )
         user = cursor.fetchone()
         
+        # Проверяем существование пользователя
         if not user:
-            if request.form:
-                return render_template('login.html', error="Неверные учетные данные")
-            else:
-                return jsonify({"error": ERR_INVALID_CREDENTIALS}), 401
+            return handle_no_user(is_form_request)
             
-        # Проверка блокировки
-        if user[3] >= 5:  # Если 5+ неудачных попыток
-            if request.form:
-                return render_template('login.html', error="Учетная запись заблокирована из-за слишком большого количества неудачных попыток входа")
-            else:
-                return jsonify({"error": "Account locked"}), 403
+        # Проверка блокировки аккаунта
+        if user[3] >= 5:
+            return handle_account_locked(is_form_request)
             
         # Проверка пароля
         if check_password_hash(user[1], password):
             # Сброс счетчика попыток
-            cursor.execute(
-                "UPDATE users SET login_attempts = 0 WHERE id = ?",
-                (user[0],)
-            )
+            cursor.execute("UPDATE users SET login_attempts = 0 WHERE id = ?", (user[0],))
             conn.commit()
             
             # Создание сессии
-            session.permanent = True
-            session['user_id'] = user[0]
-            session['username'] = username
-            session['role'] = user[2]
+            create_user_session(user[0], username, user[2])
             
-            # Возврат ответа в зависимости от типа запроса
-            if request.form:
+            # Возврат ответа
+            if is_form_request:
                 return redirect('/')
-            else:
-                return jsonify({"status": "Authenticated"}), 200
+            return jsonify({"status": "Authenticated"}), 200
         else:
             # Увеличиваем счетчик попыток
-            cursor.execute(
-                "UPDATE users SET login_attempts = login_attempts + 1 WHERE id = ?",
-                (user[0],)
-            )
+            cursor.execute("UPDATE users SET login_attempts = login_attempts + 1 WHERE id = ?", (user[0],))
             conn.commit()
             return jsonify({"error": ERR_INVALID_CREDENTIALS}), 401
             
@@ -450,7 +459,7 @@ def admin():
         conn.close()
     except sqlite3.Error as e:
         users = []
-        app.logger.error(f"Ошибка при получении списка пользователей: {str(e)}")
+        app.logger.error("Ошибка при получении списка пользователей: " + str(e))
     
     # Отображаем административную панель
     return render_template('admin.html', users=users)
@@ -475,21 +484,21 @@ def debug_db():
         # Вывод структуры таблицы
         result += "<h2>Структура таблицы users:</h2><table border='1'><tr><th>ID</th><th>Название</th><th>Тип</th><th>Not Null</th><th>Default</th><th>PK</th></tr>"
         for col in columns:
-            result += f"<tr><td>{col[0]}</td><td>{col[1]}</td><td>{col[2]}</td><td>{col[3]}</td><td>{col[4]}</td><td>{col[5]}</td></tr>"
+            result += "<tr><td>{0}</td><td>{1}</td><td>{2}</td><td>{3}</td><td>{4}</td><td>{5}</td></tr>".format(col[0], col[1], col[2], col[3], col[4], col[5])
         result += "</table>"
         
         # Вывод пользователей
-        result += f"<h2>Пользователи в базе:</h2>"
+        result += "<h2>Пользователи в базе:</h2>"
         if users:
             result += "<table border='1'><tr>"
             for i in range(len(columns)):
-                result += f"<th>{columns[i][1]}</th>"
+                result += "<th>{0}</th>".format(columns[i][1])
             result += "</tr>"
             
             for user in users:
                 result += "<tr>"
                 for value in user:
-                    result += f"<td>{value}</td>"
+                    result += "<td>{0}</td>".format(value)
                 result += "</tr>"
             result += "</table>"
         else:
@@ -510,7 +519,7 @@ def debug_db():
         
         return result
     except sqlite3.Error as e:
-        return f"Ошибка базы данных: {str(e)}"
+        return "Ошибка базы данных: " + str(e)
 
 # Функция для проверки безопасности ключей перед запуском
 def check_key_security():
