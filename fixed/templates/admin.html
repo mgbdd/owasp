@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Admin Panel</title>
+</head>
+<body>
+    <h1>Admin Panel</h1>
+    
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <p style="color: {% if category == 'error' %}red{% elif category == 'success' %}green{% else %}blue{% endif %};">
+                    {{ message }}
+                </p>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+    
+    <h2>User Management</h2>
+    
+    {% if users %}
+    <table border="1">
+        <tr>
+            <th>ID</th>
+            <th>Username</th>
+            <th>Role</th>
+            <th>Actions</th>
+        </tr>
+        {% for user in users %}
+        <tr>
+            <td>{{ user[0] }}</td>
+            <td>{{ user[1] }}</td>
+            <td>{{ user[2] }}</td>
+            <td>
+                <a href="/admin/edit/{{ user[0] }}">Edit</a> | 
+                <a href="/admin/delete/{{ user[0] }}" onclick="return confirm('Are you sure you want to delete this user?')">Delete</a>
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% else %}
+    <p>No users found in the database.</p>
+    {% endif %}
+    
+    <h2>System Information</h2>
+    <p>This section provides system information and statistics.</p>
+    
+    <p>
+        <a href="/">Home</a> | 
+        <a href="/dashboard">Dashboard</a> | 
+        <a href="/logout">Logout</a>
+    </p>
+</body>
+</html>

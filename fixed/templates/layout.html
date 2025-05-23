@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{% block title %}Secure Application{% endblock %}</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            margin-bottom: 20px;
+        }
+        .nav {
+            margin-bottom: 20px;
+        }
+        .nav a {
+            margin-right: 10px;
+        }
+        .flash-message {
+            padding: 10px;
+            margin-bottom: 15px;
+            border-radius: 4px;
+        }
+        .flash-message.success {
+            background-color: #dff0d8;
+            color: #3c763d;
+        }
+        .flash-message.error {
+            background-color: #f2dede;
+            color: #a94442;
+        }
+        .flash-message.info {
+            background-color: #d9edf7;
+            color: #31708f;
+        }
+        button {
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+    </style>
+    {% block additional_styles %}{% endblock %}
+</head>
+<body>
+    <h1>{% block header %}Secure Application{% endblock %}</h1>
+    
+    <div class="nav">
+        {% if session.username %}
+            <a href="/">Home</a> |
+            <a href="/profile">Profile</a> |
+            {% if session.role == 'admin' %}
+                <a href="/admin">Admin</a> |
+            {% endif %}
+            <a href="/logout">Logout</a>
+        {% else %}
+            <a href="/">Home</a> |
+            <a href="/login">Login</a> |
+            <a href="/register">Register</a>
+        {% endif %}
+    </div>
+    
+    <!-- Отображение flash-сообщений -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="flash-message {{ category }}">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+    
+    <div class="content">
+        {% block content %}{% endblock %}
+    </div>
+</body>
+</html>

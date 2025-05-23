@@ -6,14 +6,42 @@
 </head>
 <body>
     <h1>Register</h1>
-    <form action="/register" method="POST">
-        <label for="username">Username:</label>
-        <input type="text" id="username" name="username" required>
-        <br>
-        <label for="password">Password:</label>
-        <input type="password" id="password" name="password" required>
-        <br>
+    
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <p style="color: {% if category == 'error' %}red{% elif category == 'success' %}green{% else %}blue{% endif %};">
+                    {{ message }}
+                </p>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+    
+    <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        
+        <label for="username">Username:</label><br>
+        <input type="text" id="username" name="username" required><br><br>
+        
+        <label for="password">Password:</label><br>
+        <input type="password" id="password" name="password" required><br>
+        <small>
+            Password must be at least 8 characters long and include uppercase letters, numbers, and special characters.
+        </small><br><br>
+        
         <button type="submit">Register</button>
     </form>
+    
+    <p>
+        <a href="/login">Login</a> | 
+        <a href="/">Home</a>
+    </p>
+    
+    <!-- Отладочная информация -->
+    <p>
+        <small>
+            CSRF Token: {% if csrf_token() %}Present{% else %}Missing{% endif %}
+        </small>
+    </p>
 </body>
 </html>

@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Error</title>
+</head>
+<body>
+    <h1>Error</h1>
+    
+    <p style="color: red;">{{ error }}</p>
+    
+    {% if details %}
+    <p><strong>Details:</strong> {{ details }}</p>
+    {% endif %}
+    
+    <hr>
+    
+    <p>Try alternative login without CSRF (debug only):</p>
+    <form action="/login_without_csrf" method="POST">
+        <input type="text" name="username" placeholder="Username"><br>
+        <input type="password" name="password" placeholder="Password"><br>
+        <button type="submit">Login (without CSRF)</button>
+    </form>
+    
+    <p>
+        <a href="/">Return to Home</a>
+    </p>
+</body>
+</html>
