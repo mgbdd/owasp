@@ -11,6 +11,9 @@ from datetime import timedelta
 
 # Константы приложения
 DATABASE_NAME = 'users.db'
+SQL_GET_TABLE_INFO = "PRAGMA table_info(users)"
+ERR_DATABASE = "Database error"
+ERR_INVALID_CREDENTIALS = "Invalid credentials"
 
 # Создаем приложение Flask
 app = Flask(__name__)
@@ -82,7 +85,7 @@ def login_without_csrf():
         cursor = conn.cursor()
         
         # Получаем информацию о структуре таблицы
-        cursor.execute("PRAGMA table_info(users)")
+        cursor.execute(SQL_GET_TABLE_INFO)
         columns = [column[1] for column in cursor.fetchall()]
         
         # Адаптируем запрос к структуре таблицы
@@ -153,7 +156,7 @@ def api_register():
         return jsonify({"status": "User created"}), 201
         
     except sqlite3.Error:
-        return jsonify({"error": "Database error"}), 500
+        return jsonify({"error": ERR_DATABASE}), 500
     finally:
         conn.close()
 
@@ -179,7 +182,7 @@ def api_login():
         user = cursor.fetchone()
         
         if not user:
-            return jsonify({"error": "Invalid credentials"}), 401
+            return jsonify({"error": ERR_INVALID_CREDENTIALS}), 401
             
         if user[3] >= 5:
             return jsonify({"error": "Account locked"}), 403
@@ -196,10 +199,10 @@ def api_login():
         else:
             cursor.execute("UPDATE users SET login_attempts = login_attempts + 1 WHERE id = ?", (user[0],))
             conn.commit()
-            return jsonify({"error": "Invalid credentials"}), 401
+            return jsonify({"error": ERR_INVALID_CREDENTIALS}), 401
             
     except sqlite3.Error:
-        return jsonify({"error": "Database error"}), 500
+        return jsonify({"error": ERR_DATABASE}), 500
     finally:
         conn.close()
 
@@ -222,7 +225,7 @@ def init_db():
         ''')
         
         # Проверяем структуру таблицы
-        cursor.execute("PRAGMA table_info(users)")
+        cursor.execute(SQL_GET_TABLE_INFO)
         columns = [column[1] for column in cursor.fetchall()]
         
         # Добавляем недостающие столбцы, если таблица уже существует
@@ -247,7 +250,7 @@ def is_strong_password(password):
     """Проверка сложности пароля"""
     return (len(password) >= 8 and
             re.search(r"[A-Z]", password) and
-            re.search(r"[0-9]", password) and
+            re.search(r"\d", password) and
             re.search(r"[!@#$%^&*]", password))
 
 # ===== РОУТИНГ =====
@@ -303,7 +306,7 @@ def register():
             return jsonify({"status": "User created"}), 201
         
     except sqlite3.Error as e:
-        return jsonify({"error": "Database error"}), 500
+        return jsonify({"error": ERR_DATABASE}), 500
     finally:
         conn.close()
 
@@ -337,7 +340,7 @@ def login():
             if request.form:
                 return render_template('login.html', error="Неверные учетные данные")
             else:
-                return jsonify({"error": "Invalid credentials"}), 401
+                return jsonify({"error": ERR_INVALID_CREDENTIALS}), 401
             
         # Проверка блокировки
         if user[3] >= 5:  # Если 5+ неудачных попыток
@@ -373,10 +376,10 @@ def login():
                 (user[0],)
             )
             conn.commit()
-            return jsonify({"error": "Invalid credentials"}), 401
+            return jsonify({"error": ERR_INVALID_CREDENTIALS}), 401
             
     except sqlite3.Error as e:
-        return jsonify({"error": "Database error"}), 500
+        return jsonify({"error": ERR_DATABASE}), 500
     finally:
         if 'conn' in locals():
             conn.close()
@@ -460,7 +463,7 @@ def debug_db():
         cursor = conn.cursor()
         
         # Получаем схему таблицы пользователей
-        cursor.execute("PRAGMA table_info(users)")
+        cursor.execute(SQL_GET_TABLE_INFO)
         columns = cursor.fetchall()
         
         # Получаем первых 5 пользователей
